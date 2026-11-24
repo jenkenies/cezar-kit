@@ -1,0 +1,20 @@
+name: mixed-agents
+description: One task, two brains - codex (DeepSeek) implements, claude reviews and fixes, then a verification command gates the result.
+steps:
+  - id: implement
+    name: Implement
+    runner: codex
+    prompt: "{{task}}"
+  - id: review
+    name: Review and fix
+    runner: claude
+    prompt: |
+      A previous agent implemented the task in this worktree already.
+      Review the changes (run `git diff` and read the touched files), fix any real
+      problems you find, then summarize: what was implemented, what you fixed.
+  - id: verify
+    name: Verify
+    command: "echo 'replace me with the real test command, e.g. mvn test'"
+    onFail:
+      retry: implement
+      max: 1

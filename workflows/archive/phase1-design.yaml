@@ -1,0 +1,16 @@
+name: phase1-design
+description: 阶段一:需求分析 + 方案设计(均由 claude 完成),产出设计文档后停下等人工确认。确认后再用 phase2-implement 编码。
+steps:
+  - id: analyze
+    name: 需求分析
+    runner: claude
+    skill: req-analysis
+    prompt: "{{task}}"
+  - id: design
+    name: 方案设计
+    runner: claude
+    skill: solution-design
+    prompt: |
+      基于上一步的需求分析文档(docs/ai-analysis/ 下最新一份),完成技术方案设计。
+      设计文档按 skill 要求写入 doc/ai-designs/,并复制到主仓库目录。
+      最后在总结中给出:设计文档的完整路径 + 3 条以内需要人工确认的关键决策点。

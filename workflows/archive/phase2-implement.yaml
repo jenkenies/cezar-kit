@@ -1,0 +1,28 @@
+name: phase2-implement
+description: 阶段二:按已批准方案编码(codex)→ code review(claude)→ 测试自修(opencode)→ mvn 编译门禁;门禁失败回编码最多 2 轮。
+steps:
+  - id: implement
+    name: 编码
+    runner: codex
+    skill: coding
+    prompt: |
+      按 skill 要求先读设计文档,再严格按方案实现。
+      任务描述中的其余要求视为补充约束,与设计文档冲突时以设计文档为准并在总结中指出。
+  - id: review
+    name: 代码 Review
+    runner: claude
+    skill: code-review
+    prompt: |
+      审查并修复上一步编码的全部改动,对照设计文档与 ai-rules/ 规则执行。
+  - id: autotest
+    name: 测试自修
+    runner: opencode
+    skill: test-verify
+    prompt: |
+      按 skill 要求运行编译验证并自修(最多 3 轮),输出最终结论。
+  - id: gate
+    name: 编译门禁
+    command: "mvn -q compile -DskipTests=true"
+    onFail:
+      retry: implement
+      max: 2

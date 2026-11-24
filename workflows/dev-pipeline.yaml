@@ -1,0 +1,71 @@
+name: dev-pipeline
+description: 通用全流程单任务流水线:需求分析与方案设计(claude)→ CEZ:ASK 人工确认门 → 编码(codex)→ Review(claude)→ 测试自修(opencode)→ 编译门禁;按 S/M/L 复杂度动态选用技能;门禁失败回编码最多 2 轮。技能文件由 sync.cmd 预置到项目 .ai/cezar/skills/(建议提交进 git)。
+steps:
+  - id: analyze-design
+    name: 需求分析与方案设计
+    runner: claude
+    prompt: |
+      你是需求分析与方案设计负责人,一次完成两件事,全程禁止写业务代码。
+
+      ## 第一步:需求分析 + 复杂度评定
+      - 通读任务描述,以只读方式探索代码库,确认影响面
+      - 评定复杂度,将分析写入 `docs/ai-analysis/<YYYYMMDD>-<主题>.md`,文件开头标注档位:
+        [S] 单点小改(1-2 个文件,无接口/表变更)
+        [M] 常规需求(多文件改动,可能涉及接口调整)
+        [L] 大改动(新接口/新表/跨模块/架构性变更)
+      - 分析文档包含:目标与背景、范围内/外、影响面(模块/接口/配置/表)、风险与待确认问题、验收标准
+
+      ## 第二步:方案设计(按档位动态选技能;技能文件在项目 .ai/cezar/skills/ 下)
+      - [L]:读取并严格遵循 .ai/cezar/skills/specpowers-explore/SKILL.md 的完整流程
+        (静默项目探索 → 2-3 方案统一维度对比 → 唯一推荐 → 设计文档落盘)
+      - [S/M]:按精简模板产出单方案 `doc/ai-designs/<YYYYMMDD>-<主题>.md`,
+        含:方案概述、改动清单(精确到文件,标注新增/修改)、关键设计、兼容性与回滚、实施步骤
+      - 需求边界拿不准时,可参考 .ai/cezar/skills/brainstorming/SKILL.md 的澄清方法,
+        但向操作者提问最多一次,其余列为"待确认"写入文档
+      - 若引用的技能文件不存在,退化为按上面的精简模板执行,并在文档中注明"技能缺失"
+
+      ## 第三步:人工确认门(必须执行,不得跳过)
+      在总结中写出方案摘要(目标/改动清单/主要风险,≤15 行,含设计文档路径),
+      然后原样输出下面这行标记(JSON 保持单行,不要加代码块围栏):
+      CEZ:ASK {"questions":[{"header":"方案确认","question":"方案已就绪,是否批准进入编码阶段?","options":[{"label":"批准,继续编码","description":"按当前设计文档进入 implement 阶段"},{"label":"需要修改","description":"请在回复中给出修改意见,我将修订方案后再次提请确认"}]}]}
+      操作者选择"需要修改"时:按其意见修订设计文档,重新给出摘要并再次输出 CEZ:ASK,直至获批。
+      获批后本步骤才允许结束。
+  - id: implement
+    name: 编码
+    runner: codex
+    skill: coding
+    prompt: |
+      设计方案已获操作者批准(批准记录与修改意见见上方对话,以最后一次批准为准)。
+      读取分析文档中的复杂度档位,动态选择实现方式:
+      - [L]:先读取 .ai/cezar/skills/test-driven-development/SKILL.md,
+        按 TDD 流程实现(先写失败测试,再实现至通过);文件不存在则直接按方案实现并注明
+      - [S/M]:直接按设计文档的实施步骤实现
+      严格按设计文档的改动清单执行,不扩大范围;发现方案问题停下说明,不自行变更方案。
+  - id: review
+    name: 代码 Review
+    runner: claude
+    skill: code-review
+    prompt: |
+      读取分析文档中的复杂度档位,动态选择审查深度:
+      - [L]:读取并遵循 .ai/cezar/skills/specpowers-review/SKILL.md
+        (git 上下文收集 + 完整方法体提取 + 多 Pass 审查 + P0-P3 分级);文件不存在则按附加技能审查并注明
+      - [S/M]:按本步骤附加的 code-review 技能做全量 diff 审查
+      对照设计文档与仓库规范文件(ai-rules/、CLAUDE.md、AGENTS.md,以仓库实际存在的为准),
+      发现问题直接修复。
+      输出审查结论:档位、采用的审查方式、修复了什么、需人工知晓的事项。
+  - id: autotest
+    name: 测试自修
+    runner: opencode
+    skill: test-verify
+    prompt: |
+      读取分析文档中的复杂度档位:
+      - [L]:先读取 .ai/cezar/skills/verification-before-completion/SKILL.md,
+        按其清单逐项验证后再跑门禁;文件不存在则按附加技能执行并注明
+      - [S/M]:直接按本步骤附加的 test-verify 技能执行
+      门禁命令:mvn -q compile -DskipTests=true(失败自修最多 3 轮),输出最终验证结论。
+  - id: gate
+    name: 编译门禁
+    command: "mvn -q compile -DskipTests=true"
+    onFail:
+      retry: implement
+      max: 2
